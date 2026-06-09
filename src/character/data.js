@@ -34,4 +34,25 @@ export const characterData = {
 		maxHp: 3,
 		skills: ["qunfang_xiaoyin", "qunfang_xuansgui"],
 	},
+	qunfang_daqiao_xiaoqiao: {
+		sex: "female",
+		group: "wu",
+		hp: 3,
+		maxHp: 3,
+		skills: ["qunfang_shoudao", "qunfang_funian"],
+	},
+	qunfang_wangtao_wangyue: {
+		sex: "female",
+		group: "shu",
+		hp: 3,
+		maxHp: 3,
+		skills: ["qunfang_luanpei", "qunfang_tongzheng"],
+	},
+	qunfang_liuling_liupei: {
+		sex: "female",
+		group: "wei",
+		hp: 3,
+		maxHp: 3,
+		skills: ["qunfang_jiahong", "qunfang_yutiao"],
+	},
 };

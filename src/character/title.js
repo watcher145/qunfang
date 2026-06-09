@@ -4,4 +4,7 @@ export const characterTitle = {
 	qunfang_zhaoxiang: "芳魂庇幼",
 	qunfang_xiahoushi: "从风兰花",
 	qunfang_caiwenji: "雀动萧来",
+	qunfang_daqiao_xiaoqiao: "残雁相依",
+	qunfang_wangtao_wangyue: "晔兮莹华",
+	qunfang_liuling_liupei: "贵胄随贡",
 };

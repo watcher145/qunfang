@@ -7,4 +7,7 @@ export const characterTranslate = {
 	qunfang_zhaoxiang: "赵襄",
 	qunfang_xiahoushi: "夏侯氏",
 	qunfang_caiwenji: "蔡文姬",
+	qunfang_daqiao_xiaoqiao: "大乔&小乔",
+	qunfang_wangtao_wangyue: "王桃&王悦",
+	qunfang_liuling_liupei: "刘伶&刘佩",
 };

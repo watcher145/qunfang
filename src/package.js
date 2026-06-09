@@ -29,11 +29,13 @@ function cloneAndPatchCards() {
 }
 
 const characterSortTranslate = {
-	qunfang_wujiang: "群芳武将",
+	qunfang_piaoping: "飘萍传",
+	qunfang_dilian: "蒂莲传",
 };
 
 const characterSort = {
-	qunfang_wujiang: ["qunfang_sunshangxiang", "qunfang_zhaoxiang", "qunfang_xiahoushi", "qunfang_caiwenji"],
+	qunfang_piaoping: ["qunfang_sunshangxiang", "qunfang_zhaoxiang", "qunfang_xiahoushi", "qunfang_caiwenji"],
+	qunfang_dilian: ["qunfang_daqiao_xiaoqiao", "qunfang_wangtao_wangyue", "qunfang_liuling_liupei"],
 };
 
 /**

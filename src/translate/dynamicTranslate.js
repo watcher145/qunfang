@@ -52,6 +52,14 @@ function formatXiaoyinDescription(player) {
 	return `${prefix}${pingLine}${zeLine}${zhuan}`;
 }
 
+function formatLuanpeiDescription(player) {
+	const base = lib.translate.qunfang_luanpei_info || "";
+	const isSha = !!player.storage.qunfang_luanpei;
+	return base
+		.replace(/①回复体力后/g, isSha ? "①回复体力后" : '<span class="bluetext">①回复体力后</span>')
+		.replace(/②使用【杀】指定目标后/g, isSha ? '<span class="firetext">②使用【杀】指定目标后</span>' : "②使用【杀】指定目标后");
+}
+
 const dynamicTranslates = {
 	qunfang_lihu(player) {
 		let base = lib.translate.qunfang_lihu_info || "";
@@ -85,6 +93,9 @@ const dynamicTranslates = {
 	},
 	qunfang_xiaoyin(player) {
 		return formatXiaoyinDescription(player);
+	},
+	qunfang_luanpei(player) {
+		return formatLuanpeiDescription(player);
 	},
 	qunfang_xuansgui(player) {
 		const base = lib.translate.qunfang_xuansgui_info || "";
