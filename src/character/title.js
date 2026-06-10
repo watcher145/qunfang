@@ -7,4 +7,6 @@ export const characterTitle = {
 	qunfang_daqiao_xiaoqiao: "残雁相依",
 	qunfang_wangtao_wangyue: "晔兮莹华",
 	qunfang_liuling_liupei: "贵胄随贡",
+	qunfang_zhaoe: "烈女誓仇",
+	qunfang_xiahoulinnv: "浮萍守贞",
 };

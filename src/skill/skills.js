@@ -519,6 +519,331 @@ async function proceedJiahongFlow(player) {
 	return { target, blocked: false };
 }
 
+function getQunfangHuilieStorage(player) {
+	return player.storage.qunfang_huilie_effect || null;
+}
+
+function getQunfangHuilieTarget(player) {
+	const storage = getQunfangHuilieStorage(player);
+	if (!storage?.target) return null;
+	return game.filterPlayer((current) => current.playerid === storage.target)[0] || null;
+}
+
+function clearQunfangHuilieEffect(player) {
+	delete player.storage.qunfang_huilie_effect;
+	player.unmarkSkill?.("qunfang_huilie");
+	player.markSkill("qunfang_huilie");
+}
+
+function getQunfangHuiliePrompt(target) {
+	return `蕙烈：令${get.translation(target)}选择一项`;
+}
+
+function getQunfangHuilieStateText(storage, player) {
+	const target = getQunfangHuilieTarget(player);
+	if (!storage || !target) {
+		return "当前没有记录的蕙烈目标";
+	}
+	const list = [`目标：${get.translation(target)}`];
+	if (storage.mode === "damage_transfer") {
+		list.push("本轮其受到的伤害转移给你");
+	} else if (storage.mode === "gain_draw") {
+		list.push("本回合其获得牌后你摸等量的牌");
+	}
+	if (!storage.turnEnded) {
+		list.push(`其本回合${storage.dealtDamage ? "已" : "未"}造成过伤害`);
+	}
+	return list.join("<br>");
+}
+
+async function useQunfangHuilieJuedou(player, target) {
+	if (!player?.isIn?.() || !target?.isIn?.()) return false;
+	const cards = target.getCards("h");
+	if (!cards.length) return false;
+	const card = { name: "juedou", isCard: true };
+	if (!player.hasUseTarget(card, false, false)) return false;
+	const result = await player
+		.chooseUseTarget(card, cards.slice(), "蕙烈：将其所有手牌当一张【决斗】使用", false)
+		.set("addCount", false)
+		.forResult();
+	return !!result?.bool;
+}
+
+function isQunfangXingjuePhaseUsing(player) {
+	if (_status.currentPhase !== player) return false;
+	if (typeof player.isPhaseUsing === "function") {
+		return player.isPhaseUsing();
+	}
+	return true;
+}
+
+function qunfangXingjueHasUsableHandcard(player) {
+	return player.getCards("h").some((card) => player.hasUseTarget(card, true, true));
+}
+
+function qunfangXingjueCanRecastAll(player) {
+	const cards = player.getCards("h");
+	return cards.length > 0 && cards.every((card) => player.canRecast(card, player));
+}
+
+function qunfangXingjueIsPerfectSquare(num) {
+	const root = Math.sqrt(num);
+	return Number.isInteger(root);
+}
+
+function qunfangXingjueGetGainableSkills(target, player) {
+	return game
+		.expandSkills(target.getSkills(null, false, false))
+		.filter((skill) => {
+			if (player.hasSkill(skill, null, null, false)) return false;
+			const info = get.info(skill);
+			if (!info || info.charlotte || info.zhuSkill || info.juexingji || info.limited || info.dutySkill || info.hiddenSkill) {
+				return false;
+			}
+			return !!get.skillInfoTranslation(skill, player).length;
+		})
+		.toUniqued();
+}
+
+const qunfangFushengEquipSlots = [
+	["equip1", "武器栏"],
+	["equip2", "防具栏"],
+	["equip3", "防御坐骑栏"],
+	["equip4", "进攻坐骑栏"],
+	["equip5", "宝物栏"],
+];
+
+function getQunfangFushengDiscardNames(player) {
+	if (!Array.isArray(player.storage.qunfang_fusheng_discarded_names)) {
+		player.storage.qunfang_fusheng_discarded_names = [];
+	}
+	return player.storage.qunfang_fusheng_discarded_names;
+}
+
+function getQunfangLostToDiscardCardsFromEvent(event, player) {
+	const cards = event.getd?.(player, "cards2")?.slice() || [];
+	if (!cards.length && event.getl?.(player)?.cards2?.length) {
+		cards.addArray(event.getl(player).cards2);
+	}
+	const seen = new Set();
+	return cards.filter((card) => {
+		const key = card?.cardid || card;
+		if (!card || seen.has(key)) return false;
+		seen.add(key);
+		return get.position(card, true) === "d";
+	});
+}
+
+function getQunfangFushengCountCardsFromEvent(event, player) {
+	if (event.name !== "cardsDiscard") {
+		return getQunfangLostToDiscardCardsFromEvent(event, player);
+	}
+	const cards = event.cards?.filterInD("d") || [];
+	if (!cards.length) return [];
+	const ordering = event.getParent?.();
+	if (ordering?.name !== "orderingDiscard") return [];
+	const related = ordering.relatedEvent || ordering.getParent?.();
+	if (related?.player !== player) return [];
+	return player.hasHistory("lose", (evt) => related === (evt.relatedEvent || evt.getParent())) ? cards : [];
+}
+
+function getQunfangDiscardedCardsFromEvent(event, player) {
+	if (event.name === "cardsDiscard") {
+		const cards = getQunfangFushengCountCardsFromEvent(event, player);
+		return event.getParent?.()?.name === "orderingDiscard" ? cards : [];
+	}
+	if (event.type !== "discard") return [];
+	return event.getd?.(player, "cards2")?.filter((card) => get.position(card, true) === "d") || [];
+}
+
+function addQunfangFushengDiscardHistory(player, cards) {
+	if (!cards?.length) return;
+	const storage = getQunfangFushengDiscardNames(player);
+	for (const card of cards) {
+		const name = get.name(card, false);
+		if (name && !storage.includes(name)) {
+			storage.push(name);
+		}
+	}
+}
+
+function getQunfangFushengDiscardCount(player) {
+	return player.storage.qunfang_fusheng_discard_count || 0;
+}
+
+function getQunfangFushengCountedIds(player) {
+	if (!Array.isArray(player.storage.qunfang_fusheng_counted_ids)) {
+		player.storage.qunfang_fusheng_counted_ids = [];
+	}
+	return player.storage.qunfang_fusheng_counted_ids;
+}
+
+function getQunfangFushengCountEventCards(event, player) {
+	let cards = [];
+	if (event.name === "cardsDiscard") {
+		const ordering = event.getParent?.();
+		const related = ordering?.relatedEvent || ordering?.getParent?.();
+		if (ordering?.name === "orderingDiscard" && related?.player === player && ["useCard", "respond"].includes(related.name)) {
+			cards = event.cards?.filterInD("d") || [];
+		}
+	} else {
+		if (event.getlx === false) return [];
+		cards = getQunfangLostToDiscardCardsFromEvent(event, player);
+	}
+	const seen = new Set();
+	return cards.filter((card) => {
+		const id = card?.cardid;
+		if (!id || seen.has(id)) return false;
+		seen.add(id);
+		return true;
+	});
+}
+
+function addQunfangFushengCountedIds(player, cards) {
+	const countedIds = getQunfangFushengCountedIds(player);
+	const added = [];
+	for (const card of cards) {
+		if (!card?.cardid || countedIds.includes(card.cardid)) continue;
+		countedIds.push(card.cardid);
+		added.push(card);
+	}
+	return added;
+}
+
+function countQunfangFushengSkills(player) {
+	return player.getSkills(null, false, false).filter((skill) => {
+		const info = get.info(skill);
+		return !!info && !info.charlotte;
+	}).length;
+}
+
+function addQunfangFushengDiscardCount(player, num) {
+	if (!num) return 0;
+	const current = getQunfangFushengDiscardCount(player) + num;
+	player.storage.qunfang_fusheng_discard_count = current;
+	return current;
+}
+
+function consumeQunfangFushengDiscardCount(player) {
+	const maxHp = player.maxHp || 0;
+	if (maxHp <= 0) return 0;
+	const current = getQunfangFushengDiscardCount(player);
+	const next = Math.max(0, current - maxHp);
+	player.storage.qunfang_fusheng_discard_count = next;
+	return next;
+}
+
+function getQunfangEnabledEquipSlots(player) {
+	return qunfangFushengEquipSlots.filter(([slot]) => !player.hasDisabledSlot(slot));
+}
+
+function isQunfangDisabledEquipSubtype(player, subtype) {
+	return !!subtype && player.hasDisabledSlot(subtype);
+}
+
+function isQunfangZhenzhiSourceCard(card, player) {
+	return get.type(card, player) === "equip" && get.subtypes(card).some((subtype) => isQunfangDisabledEquipSubtype(player, subtype));
+}
+
+function getQunfangUndiscardedOrdinaryTricks(event, player) {
+	const discarded = getQunfangFushengDiscardNames(player);
+	return get.inpileVCardList((info) => {
+		if (info[0] !== "trick" || discarded.includes(info[2])) return false;
+		if (!event) return true;
+		return event.filterCard(get.autoViewAs({ name: info[2], nature: info[3] }, "unsure"), player, event);
+	});
+}
+
+function getQunfangFushengUsableCards(event, player) {
+	return get.inpileVCardList((info) => {
+		if (!["basic", "trick"].includes(info[0])) return false;
+		if (!event) return true;
+		return event.filterCard(get.autoViewAs({ name: info[2], nature: info[3] }, "unsure"), player, event);
+	});
+}
+
+function canQunfangFushengUseCard(player, info) {
+	return player.hasUseTarget({ name: info[2], nature: info[3], isCard: true }, true, true);
+}
+
+function getQunfangFushengSecondModeCards(player) {
+	return getQunfangFushengUsableCards(null, player).filter((info) => canQunfangFushengUseCard(player, info));
+}
+
+function canQunfangFushengUseSecondMode(player) {
+	return getQunfangEnabledEquipSlots(player).length > 0 && getQunfangFushengSecondModeCards(player).length > 0;
+}
+
+function getQunfangFushengPrompt(player) {
+	return player.storage.qunfang_fusheng
+		? "是否发动【浮生】，废除一个装备栏并视为使用一张普通锦囊牌或基本牌，然后加1点体力上限？"
+		: `是否发动【浮生】，摸${get.cnNumber(countQunfangFushengSkills(player))}张牌？`;
+}
+
+async function resolveQunfangFusheng(player) {
+	const secondMode = !!player.storage.qunfang_fusheng;
+	if (!secondMode) {
+		await player.draw(countQunfangFushengSkills(player));
+		player.markSkill("qunfang_fusheng");
+		player.changeZhuanhuanji("qunfang_fusheng");
+		return true;
+	}
+	const list = getQunfangFushengSecondModeCards(player);
+	if (!list.length) return false;
+	const slot = await chooseQunfangDisableEquipSlot(player, "浮生：选择要废除的装备栏");
+	if (!slot) return false;
+	player.markSkill("qunfang_fusheng");
+	player.changeZhuanhuanji("qunfang_fusheng");
+	const result = await player
+		.chooseButton(["浮生：视为使用一张普通锦囊牌或基本牌", [list, "vcard"]], true)
+		.set("ai", (button) => {
+			if (get.event().getParent().type !== "phase") return 1;
+			return get.player().getUseValue({ name: button.link[2], nature: button.link[3] });
+		})
+		.forResult();
+	if (!result?.bool || !result.links?.length) return false;
+	const card = { name: result.links[0][2], nature: result.links[0][3], isCard: true };
+	const used = await player.chooseUseTarget(card, true, false, `浮生：视为使用一张【${get.translation(card.name)}】`).forResult();
+	if (!used?.bool) return false;
+	await player.gainMaxHp();
+	return true;
+}
+
+async function chooseQunfangDisableEquipSlot(player, prompt) {
+	const list = getQunfangEnabledEquipSlots(player);
+	if (!list.length) return null;
+	if (list.length === 1) {
+		await player.disableEquip(list[0][0]);
+		return list[0][0];
+	}
+	const result = await player
+		.chooseButton([
+			prompt,
+			[
+				list.map(([slot, text]) => [slot, text]),
+				"textbutton",
+			],
+		])
+		.set("ai", (button) => {
+			const index = qunfangFushengEquipSlots.findIndex((item) => item[0] === button.link);
+			return 5 - index;
+		})
+		.forResult();
+	if (!result?.bool || !result.links?.length) return null;
+	await player.disableEquip(result.links[0]);
+	return result.links[0];
+}
+
+function getQunfangYuanlieSkills(player) {
+	const damagedHp = player.getDamagedHp();
+	const list = [];
+	if (damagedHp >= 0) list.push("xinfu_duanfa");
+	if (damagedHp >= 1) list.push("qunfang_xuebi");
+	if (damagedHp >= 2) list.push("liejie");
+	if (damagedHp >= 3) list.push("qunfang_zhenzhi");
+	return list;
+}
+
 export const skills = {
 	qunfang_yinji: {
 		audio: 2,
@@ -1387,6 +1712,583 @@ export const skills = {
 				},
 			},
 		},
+	},
+	qunfang_xunzhong: {
+		audio: 2,
+		locked: true,
+		mark: true,
+		marktext: "忠",
+		derivation: ["dragjiezhong", "dcxunjie"],
+		init(player) {
+			if (!Array.isArray(player.storage.qunfang_xunzhong_damagedBy)) {
+				player.storage.qunfang_xunzhong_damagedBy = [];
+			}
+			if (!Array.isArray(player.storage.qunfang_xunzhong_gained)) {
+				player.storage.qunfang_xunzhong_gained = [];
+			}
+			player.removeAdditionalSkill("qunfang_xunzhong");
+		},
+		intro: {
+			content(storage, player) {
+				const list = player.storage.qunfang_xunzhong_gained || [];
+				return "本轮已获得：" + (list.length ? list.map((skill) => get.translation(skill)).join("、") : "（无）");
+			},
+		},
+		trigger: {
+			source: "damageSource",
+			global: ["loseAfter", "loseAsyncAfter"],
+			player: "damageEnd",
+		},
+		forced: true,
+		filter(event, player, name) {
+			switch (name) {
+				case "damageSource":
+					return event.player && event.player !== player;
+				case "damageEnd":
+					return event.source && event.source !== player;
+				default: {
+					if (event.type !== "discard") return false;
+					const damagedBy = player.storage.qunfang_xunzhong_damagedBy || [];
+					if (!damagedBy.length) return false;
+					return game.hasPlayer((current) => damagedBy.includes(current.playerid) && event.getl(current)?.cards2?.length);
+				}
+			}
+		},
+		async content(event, trigger, player) {
+			switch (event.triggername) {
+				case "damageSource":
+					if (!player.storage.qunfang_xunzhong_gained.includes("dragjiezhong")) {
+						player.storage.qunfang_xunzhong_gained.push("dragjiezhong");
+					}
+					player.addAdditionalSkill("qunfang_xunzhong", player.storage.qunfang_xunzhong_gained.slice());
+					player.markSkill("qunfang_xunzhong");
+					break;
+				case "damageEnd":
+					if (!Array.isArray(player.storage.qunfang_xunzhong_damagedBy)) {
+						player.storage.qunfang_xunzhong_damagedBy = [];
+					}
+					if (!player.storage.qunfang_xunzhong_damagedBy.includes(trigger.source.playerid)) {
+						player.storage.qunfang_xunzhong_damagedBy.push(trigger.source.playerid);
+					}
+					break;
+				default:
+					if (!player.storage.qunfang_xunzhong_gained.includes("dcxunjie")) {
+						player.storage.qunfang_xunzhong_gained.push("dcxunjie");
+					}
+					player.addAdditionalSkill("qunfang_xunzhong", player.storage.qunfang_xunzhong_gained.slice());
+					player.markSkill("qunfang_xunzhong");
+					break;
+			}
+		},
+		group: "qunfang_xunzhong_round",
+		subSkill: {
+			round: {
+				trigger: {
+					global: "roundStart",
+				},
+				forced: true,
+				popup: false,
+				filter(event, player) {
+					return (player.storage.qunfang_xunzhong_damagedBy || []).length > 0 || (player.storage.qunfang_xunzhong_gained || []).length > 0;
+				},
+				content(event, trigger, player) {
+					player.storage.qunfang_xunzhong_damagedBy = [];
+					player.storage.qunfang_xunzhong_gained = [];
+					player.removeAdditionalSkill("qunfang_xunzhong");
+					player.markSkill("qunfang_xunzhong");
+				},
+			},
+		},
+	},
+	qunfang_huilie: {
+		audio: 2,
+		mark: true,
+		marktext: "烈",
+		intro: {
+			content(storage, player) {
+				return getQunfangHuilieStateText(getQunfangHuilieStorage(player), player);
+			},
+		},
+		trigger: { global: "phaseUseBegin" },
+		direct: true,
+		filter(event, player) {
+			if (!event.player?.isIn?.() || event.player === player) return false;
+			if (player.storage.qunfang_huilie_used) return false;
+			return true;
+		},
+		async content(event, trigger, player) {
+			const target = trigger.player;
+			const result = await player
+				.chooseBool(get.prompt("qunfang_huilie", target), getQunfangHuiliePrompt(target))
+				.set("ai", () => {
+					const { player: source, target } = get.event();
+					return get.attitude(source, target) !== 0;
+				})
+				.set("target", target)
+				.forResult();
+			if (!result.bool) return;
+			player.logSkill("qunfang_huilie", target);
+			const choice = await target
+				.chooseControl("option1", "option2")
+				.set("choiceList", ["本轮其受到的伤害转移给你", "本回合其获得牌后你摸等量的牌"])
+				.set("prompt", "蕙烈：选择一项")
+				.set("ai", () => {
+					const { player: current, source } = get.event();
+					return get.attitude(current, source) > 0 ? "option2" : "option1";
+				})
+				.set("source", player)
+				.forResultControl();
+			player.storage.qunfang_huilie_used = true;
+			player.storage.qunfang_huilie_effect = {
+				target: target.playerid,
+				mode: choice === "option1" ? "damage_transfer" : "gain_draw",
+				dealtDamage: false,
+				turnEnded: false,
+				settled: false,
+			};
+			player.markSkill("qunfang_huilie");
+		},
+		group: [
+			"qunfang_huilie_damage",
+			"qunfang_huilie_gain",
+			"qunfang_huilie_record",
+			"qunfang_huilie_end",
+			"qunfang_huilie_cleanup",
+			"qunfang_huilie_round",
+		],
+		subSkill: {
+				damage: {
+					charlotte: true,
+					trigger: { global: "damageBegin3" },
+					forced: true,
+					popup: false,
+				filter(event, player) {
+					const storage = getQunfangHuilieStorage(player);
+					if (!storage || storage.mode !== "damage_transfer") return false;
+					const target = getQunfangHuilieTarget(player);
+					return !!target && event.player === target && player.isIn();
+				},
+					async content(event, trigger, player) {
+						await player.draw(2);
+						trigger.player = player;
+					},
+				},
+			gain: {
+				charlotte: true,
+				trigger: { global: "gainAfter" },
+				forced: true,
+				popup: false,
+				filter(event, player) {
+					const storage = getQunfangHuilieStorage(player);
+					if (!storage || storage.mode !== "gain_draw" || storage.turnEnded) return false;
+					const target = getQunfangHuilieTarget(player);
+					return !!target && event.player === target && event.cards?.length > 0;
+				},
+				async content(event, trigger, player) {
+					await player.draw(trigger.cards.length);
+				},
+			},
+			record: {
+				charlotte: true,
+				trigger: { global: "damageSource" },
+				forced: true,
+				popup: false,
+				filter(event, player) {
+					const storage = getQunfangHuilieStorage(player);
+					if (!storage || storage.turnEnded) return false;
+					const target = getQunfangHuilieTarget(player);
+					return !!target && event.source === target;
+				},
+				content(event, trigger, player) {
+					player.storage.qunfang_huilie_effect.dealtDamage = true;
+					player.markSkill("qunfang_huilie");
+				},
+			},
+			end: {
+				charlotte: true,
+				trigger: { global: "phaseJieshuBegin" },
+				forced: true,
+				popup: false,
+				filter(event, player) {
+					const storage = getQunfangHuilieStorage(player);
+					if (!storage || storage.settled) return false;
+					const target = getQunfangHuilieTarget(player);
+					return !!target && event.player === target;
+				},
+				async content(event, trigger, player) {
+					const storage = getQunfangHuilieStorage(player);
+					const target = getQunfangHuilieTarget(player);
+					if (!storage || !target) {
+						clearQunfangHuilieEffect(player);
+						return;
+					}
+					if (!storage.dealtDamage) {
+						await useQunfangHuilieJuedou(player, target);
+					}
+					if (storage.mode === "damage_transfer") {
+						storage.turnEnded = true;
+						storage.settled = true;
+						player.markSkill("qunfang_huilie");
+						return;
+					}
+					clearQunfangHuilieEffect(player);
+				},
+			},
+			cleanup: {
+				charlotte: true,
+				trigger: { global: "roundEnd" },
+				forced: true,
+				popup: false,
+				filter(event, player) {
+					const storage = getQunfangHuilieStorage(player);
+					return !!storage && storage.mode === "damage_transfer";
+				},
+				content(event, trigger, player) {
+					clearQunfangHuilieEffect(player);
+				},
+			},
+			round: {
+				charlotte: true,
+				trigger: { global: "roundStart" },
+				forced: true,
+				popup: false,
+				filter(event, player) {
+					return !!player.storage.qunfang_huilie_used;
+				},
+				content(event, trigger, player) {
+					player.storage.qunfang_huilie_used = false;
+				},
+			},
+		},
+	},
+	qunfang_shilie: {
+		audio: 2,
+		locked: true,
+		init(player) {
+			player.storage.qunfang_shilie_opened = false;
+		},
+		trigger: {
+			global: "phaseBefore",
+			player: "enterGame",
+		},
+		forced: true,
+		popup: false,
+		filter(event, player) {
+			if (player.storage.qunfang_shilie_opened) return false;
+			if (event.name === "enterGame") return true;
+			return game.phaseNumber === 0;
+		},
+		async content(event, trigger, player) {
+			player.storage.qunfang_shilie_opened = true;
+			await player.addSkills(["dcsuchou", "twodcspshichou"]);
+		},
+		group: "qunfang_shilie_draw",
+		subSkill: {
+			draw: {
+				charlotte: true,
+				trigger: {
+					player: ["loseHpAfter", "loseMaxHpAfter"],
+				},
+				forced: true,
+				popup: false,
+				filter(event, player) {
+					return player.countCards("h") < player.maxHp;
+				},
+				async content(event, trigger, player) {
+					await player.drawTo(player.maxHp);
+				},
+			},
+		},
+	},
+	qunfang_xingjue: {
+		audio: 2,
+		locked: true,
+		mark: true,
+		marktext: "决",
+		init(player) {
+			player.storage.qunfang_xingjue_recast_count = 0;
+			player.storage.qunfang_xingjue_running = false;
+		},
+		intro: {
+			content(storage, player) {
+				return `已重铸${player.storage.qunfang_xingjue_recast_count || 0}次牌`;
+			},
+		},
+		trigger: {
+			player: ["phaseUseBegin", "useCardAfter", "gainAfter", "loseAfter"],
+		},
+		forced: true,
+		popup: false,
+		filter(event, player) {
+			if (player.storage.qunfang_xingjue_running) return false;
+			if (!isQunfangXingjuePhaseUsing(player)) return false;
+			if (!qunfangXingjueCanRecastAll(player)) return false;
+			return !qunfangXingjueHasUsableHandcard(player);
+		},
+		async content(event, trigger, player) {
+			player.storage.qunfang_xingjue_running = true;
+			try {
+				while (isQunfangXingjuePhaseUsing(player) && qunfangXingjueCanRecastAll(player) && !qunfangXingjueHasUsableHandcard(player)) {
+					const cards = player.getCards("h");
+					if (!cards.length) break;
+					await player.recast(cards);
+				}
+			} finally {
+				player.storage.qunfang_xingjue_running = false;
+				player.markSkill("qunfang_xingjue");
+			}
+		},
+		group: ["qunfang_xingjue_count", "qunfang_xingjue_save", "qunfang_xingjue_loot"],
+		subSkill: {
+			count: {
+				charlotte: true,
+				trigger: { player: "recastAfter" },
+				forced: true,
+				popup: false,
+				async content(event, trigger, player) {
+					player.storage.qunfang_xingjue_recast_count = (player.storage.qunfang_xingjue_recast_count || 0) + 1;
+					if (qunfangXingjueIsPerfectSquare(player.storage.qunfang_xingjue_recast_count)) {
+						await player.gainMaxHp();
+					}
+					player.markSkill("qunfang_xingjue");
+				},
+			},
+			save: {
+				charlotte: true,
+				trigger: { player: "damageBegin4" },
+				forced: true,
+				popup: false,
+				filter(event, player) {
+					return event.num > 0 && player.maxHp > 0 && player.hp + player.hujia <= event.num;
+				},
+				async content(event, trigger, player) {
+					await player.loseMaxHp();
+					trigger.cancel();
+				},
+			},
+			loot: {
+				charlotte: true,
+				trigger: { source: "dieAfter" },
+				forced: true,
+				filter(event, player) {
+					return !!event.player && event.player !== player && qunfangXingjueGetGainableSkills(event.player, player).length > 0;
+				},
+				async content(event, trigger, player) {
+					const list = qunfangXingjueGetGainableSkills(trigger.player, player);
+					const result = await player
+						.chooseButton(["行决：选择获得其一个技能", [list, "skill"]], true)
+						.set("ai", (button) => {
+							const info = get.info(button.link);
+							if (info?.ai?.combo) return 3;
+							if (info?.ai?.maixie || info?.ai?.maixie_defend) return 2;
+							return get.skillRank(button.link, "inout");
+						})
+						.forResult();
+					if (result?.bool && result.links?.length) {
+						await player.addSkills(result.links[0]);
+					}
+				},
+			},
+		},
+	},
+	qunfang_fusheng: {
+		audio: 2,
+		init(player) {
+			player.storage.qunfang_fusheng_discard_count ??= 0;
+			player.storage.qunfang_fusheng_counted_ids ??= [];
+		},
+		zhuanhuanji: true,
+		mark: true,
+		marktext: "☯",
+		intro: {
+			content(storage, player) {
+				const fn = lib.dynamicTranslate?.qunfang_fusheng;
+				if (fn) return fn(player);
+				return (
+					"转换技，每当你有X张牌失去并进入弃牌堆，或当你进入濒死状态时，" +
+					(!storage
+						? "你可以摸等同于技能数的牌。"
+						: "你可以废除一个装备栏，视为使用一张普通锦囊牌或基本牌，然后加1点体力上限。") +
+					`（X为你的体力上限；当前已累计${getQunfangFushengDiscardCount(player)}张）`
+				);
+			},
+		},
+		group: ["qunfang_fusheng_history", "qunfang_fusheng_count_record"],
+		trigger: {
+			player: "dying",
+		},
+		direct: true,
+		filter(event, player) {
+			if (!player.isIn()) return false;
+			return !player.storage.qunfang_fusheng || canQunfangFushengUseSecondMode(player);
+		},
+		async cost(event, trigger, player) {
+			event.result = await player.chooseBool(get.prompt(event.skill), getQunfangFushengPrompt(player)).set("ai", () => true).forResult();
+		},
+		async content(event, trigger, player) {
+			await resolveQunfangFusheng(player);
+		},
+		subSkill: {
+			history: {
+				charlotte: true,
+				trigger: { global: ["loseAfter", "loseAsyncAfter", "cardsDiscardAfter"] },
+				forced: true,
+				popup: false,
+				content(event, trigger, player) {
+					const cards = getQunfangDiscardedCardsFromEvent(trigger, player);
+					if (cards.length) {
+						addQunfangFushengDiscardHistory(player, cards);
+					}
+					player.markSkill("qunfang_fusheng");
+				},
+			},
+			count_record: {
+				charlotte: true,
+				trigger: {
+					player: "loseAfter",
+					global: ["equipAfter", "addJudgeAfter", "gainAfter", "loseAsyncAfter", "addToExpansionAfter", "cardsDiscardAfter"],
+				},
+				forced: true,
+				popup: false,
+				silent: true,
+				filter(event, player) {
+					const cards = getQunfangFushengCountEventCards(event, player).filter((card) => !getQunfangFushengCountedIds(player).includes(card.cardid));
+					if (!cards.length) return false;
+					event._qunfang_fusheng_count_cards = cards;
+					return true;
+				},
+				async content(event, trigger, player) {
+					const cards = addQunfangFushengCountedIds(player, trigger._qunfang_fusheng_count_cards || getQunfangFushengCountEventCards(trigger, player));
+					if (!cards.length) return;
+					addQunfangFushengDiscardCount(player, cards.length);
+					player.markSkill("qunfang_fusheng");
+					if (getQunfangFushengDiscardCount(player) < player.maxHp) return;
+					if (player.storage.qunfang_fusheng && !canQunfangFushengUseSecondMode(player)) return;
+					const result = await player
+						.chooseBool(get.prompt("qunfang_fusheng"), getQunfangFushengPrompt(player))
+						.set("ai", () => true)
+						.forResult();
+					if (!result?.bool) return;
+					consumeQunfangFushengDiscardCount(player);
+					await resolveQunfangFusheng(player);
+				},
+			},
+		},
+	},
+	qunfang_xuebi: {
+		audio: 2,
+		locked: true,
+		trigger: { player: "dying" },
+		forced: true,
+		filter(event, player) {
+			return player.countCards("e") > 0;
+		},
+		async content(event, trigger, player) {
+			const num = player.countDisabledSlot();
+			await player.discard(player.getCards("e"));
+			if (num > 0) {
+				await player.recover(num);
+			}
+		},
+	},
+	qunfang_zhenzhi: {
+		audio: 2,
+		group: "qunfang_fusheng_history",
+		mod: {
+			ignoredHandcard(card, player) {
+				if (get.position(card) === "h" && isQunfangZhenzhiSourceCard(card, player)) {
+					return true;
+				}
+			},
+			cardDiscardable(card, player, name) {
+				if (name === "phaseDiscard" && isQunfangZhenzhiSourceCard(card, player)) {
+					return false;
+				}
+			},
+		},
+		enable: ["chooseToUse", "chooseToRespond"],
+		filter(event, player) {
+			if (!player.countCards("hes", (card) => isQunfangZhenzhiSourceCard(card, player))) return false;
+			return getQunfangUndiscardedOrdinaryTricks(event, player).length > 0;
+		},
+		chooseButton: {
+			dialog(event, player) {
+				return ui.create.dialog("贞志", [getQunfangUndiscardedOrdinaryTricks(event, player), "vcard"]);
+			},
+			check(button) {
+				if (get.event().getParent().type !== "phase") return 1;
+				return get.player().getUseValue({ name: button.link[2], nature: button.link[3] });
+			},
+			backup(links, player) {
+				return {
+					audio: "qunfang_zhenzhi",
+					popname: true,
+					position: "hes",
+					filterCard(card, current) {
+						return isQunfangZhenzhiSourceCard(card, current);
+					},
+					check(card) {
+						const value = get.value(card);
+						if (_status.event.name === "chooseToRespond") {
+							return 1 / Math.max(0.1, value);
+						}
+						return 8 - value;
+					},
+					viewAs: { name: links[0][2], nature: links[0][3] },
+				};
+			},
+			prompt(links, player) {
+				return "将一张对应已废除装备栏副类别的装备牌当作" + (get.translation(links[0][3]) || "") + get.translation(links[0][2]) + "使用或打出";
+			},
+		},
+		hiddenCard(player, name) {
+			if (!player.countCards("hes", (card) => isQunfangZhenzhiSourceCard(card, player))) return false;
+			return getQunfangUndiscardedOrdinaryTricks(null, player).some((info) => info[2] === name);
+		},
+		ai: {
+			respondSha: true,
+			respondShan: true,
+			order: 8,
+			result: { player: 1 },
+		},
+	},
+	qunfang_yuanlie: {
+		audio: 2,
+		locked: true,
+		mark: true,
+		marktext: "烈",
+		intro: {
+			content(storage, player) {
+				const list = (storage || []).slice();
+				return "当前视为拥有：" + (list.length ? list.map((skill) => get.translation(skill)).join("、") : "（无）");
+			},
+		},
+		init(player, skill) {
+			player.storage.qunfang_yuanlie = [];
+			player.storage.qunfang_yuanlie_skills = [];
+			const list = getQunfangYuanlieSkills(player);
+			player.storage.qunfang_yuanlie = list.slice();
+			player.storage.qunfang_yuanlie_skills = list.slice();
+			const currentSkills = player?.additionalSkills?.[skill];
+			if (!currentSkills?.length || !currentSkills.containsAll(...list) || !list.containsAll(...currentSkills)) {
+				player.addAdditionalSkill(skill, list);
+			}
+			player.markSkill(skill);
+		},
+		onremove(player) {
+			player.storage.qunfang_yuanlie = [];
+			player.storage.qunfang_yuanlie_skills = [];
+			player.removeAdditionalSkills("qunfang_yuanlie");
+		},
+		trigger: {
+			player: ["changeHpAfter", "gainMaxHpAfter", "loseMaxHpAfter"],
+		},
+		forced: true,
+		popup: false,
+		async content(event, trigger, player) {
+			get.info(event.name).init(player, event.name);
+		},
+		derivation: ["xinfu_duanfa", "qunfang_xuebi", "liejie", "qunfang_zhenzhi"],
 	},
 	...qunfangZhaoxiangSkills,
 	...qunfangXiahoushiSkills,
