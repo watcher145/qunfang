@@ -32,12 +32,16 @@ const characterSortTranslate = {
 	qunfang_piaoping: "飘萍传",
 	qunfang_dilian: "蒂莲传",
 	qunfang_liehui: "烈蕙传",
+	qunfang_dusi: "毒菟传",
+	qunfang_fangrou: "芳葇传",
 };
 
 const characterSort = {
 	qunfang_piaoping: ["qunfang_sunshangxiang", "qunfang_zhaoxiang", "qunfang_xiahoushi", "qunfang_caiwenji"],
 	qunfang_dilian: ["qunfang_daqiao_xiaoqiao", "qunfang_wangtao_wangyue", "qunfang_liuling_liupei"],
 	qunfang_liehui: ["qunfang_lifuren", "qunfang_zhaoe", "qunfang_xiahoulinnv"],
+	//qunfang_dusi: [],
+	//qunfang_fangrou: [],
 };
 
 /**
