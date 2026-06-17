@@ -97,6 +97,27 @@ function formatLuanpeiDescription(player) {
 		.replace(/②使用【杀】指定目标后/g, isSha ? '<span class="firetext">②使用【杀】指定目标后</span>' : "②使用【杀】指定目标后");
 }
 
+function formatJingyanDescription(player) {
+	const base = lib.translate.qunfang_jingyan_info || "";
+	const single = !!player.storage.qunfang_jingyan_mode_count;
+	const hand = !!player.storage.qunfang_jingyan_mode_dest;
+	const swapCount = !!player.storage.qunfang_jingyan_swap_count;
+	const swapDest = !!player.storage.qunfang_jingyan_swap_dest;
+	const countFirst = swapCount ? "一" : "多";
+	const countSecond = swapCount ? "多张" : "一张";
+	const countPart = single
+		? `①${countFirst}<span class="firetext">②${countSecond}</span>`
+		: `<span class="bluetext">①${countFirst}</span>②${countSecond}`;
+	const destFirst = swapDest ? "一名角色的手牌区" : "弃牌堆";
+	const destSecond = swapDest ? "弃牌堆" : "一名角色的手牌区";
+	const destPart = hand
+		? `①${destFirst}<span class="firetext">②${destSecond}</span>`
+		: `<span class="bluetext">①${destFirst}</span>②${destSecond}`;
+	return base
+		.replace(/①多②一张/g, countPart)
+		.replace(/①弃牌堆②一名角色的手牌区/g, destPart);
+}
+
 function formatFushengDescription(player) {
 	const base = lib.translate.qunfang_fusheng_info || "";
 	const isYin = !!player.storage.qunfang_fusheng;
@@ -148,6 +169,9 @@ const dynamicTranslates = {
 	},
 	qunfang_luanpei(player) {
 		return formatLuanpeiDescription(player);
+	},
+	qunfang_jingyan(player) {
+		return formatJingyanDescription(player);
 	},
 	qunfang_xuansgui(player) {
 		const base = lib.translate.qunfang_xuansgui_info || "";

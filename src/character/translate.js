@@ -13,4 +13,6 @@ export const characterTranslate = {
 	qunfang_lifuren: "李夫人",
 	qunfang_zhaoe: "赵娥",
 	qunfang_xiahoulinnv: "夏侯令女",
+	qunfang_dufuren: "杜夫人",
+	qunfang_diaochan: "貂蝉",
 };

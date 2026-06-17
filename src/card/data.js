@@ -40,6 +40,18 @@ export const cardData = {
 			},
 		},
 	},
+	qunfang_qiaoren: {
+		fullskin: true,
+		type: "equip",
+		subtype: "equip1",
+		distance: { attackFrom: -1 },
+		skills: ["qunfang_qiaoren_skill"],
+		ai: {
+			basic: {
+				equipValue: 5,
+			},
+		},
+	},
 	qunfang_toulianghuanzhu: {
 		fullskin: true,
 		type: "trick",

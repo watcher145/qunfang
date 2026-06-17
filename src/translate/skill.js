@@ -1,6 +1,16 @@
 import { get } from "noname";
 
 export const skillTranslate = {
+	qunfang_jianqiao: "间俏",
+	qunfang_jianqiao_info:
+		"<b>锁定技，昂扬技</b>，每回合开始时，你将一张【俏刃】置入一名角色的武器栏。激昂：全场累计造成三次伤害。",
+	qunfang_luju: "戮局",
+	qunfang_luju_global: "戮局",
+	qunfang_luju_info:
+		"每名角色出牌阶段限一次，若其体力值不小于/不大于你，其可将场上一张牌当【决斗】/【借刀杀人】使用。",
+	qunfang_xuanshi: "旋势",
+	qunfang_xuanshi_info:
+		"每回合各限一次，非实体牌指定目标时，你可为此牌增加一个目标；一张装备牌进入弃牌堆后，你可令一名角色获得弃牌堆中的一张【杀】；然后你回复一点体力。",
 	qunfang_yinji: "姻计",
 	qunfang_yinji_info:
 		"每回合限一次，当一名其他角色回复体力时，你可以与其依次视为使用一张【以逸待劳】，若双方因此失去的牌有相同的类别，双方依次使用一张对方失去牌中这些类别的牌，且只能指定对方为唯一目标。",
@@ -71,4 +81,10 @@ export const skillTranslate = {
 	qunfang_yuanlie: "爰烈",
 	qunfang_yuanlie_info:
 		`<b>锁定技</b>，当你的已损失体力值不小于0/1/2/3时，你视为拥有${get.poptip("xinfu_duanfa")}/${get.poptip("qunfang_xuebi")}/${get.poptip("liejie")}/${get.poptip("qunfang_zhenzhi")}。`,
+	qunfang_jingyan: "惊颜",
+	qunfang_jingyan_info:
+		"<b>转换技</b>，当本回合内未处于过你的装备区和手牌区的①多②一张牌一次性进入①弃牌堆②一名角色的手牌区后且不由此技能引起，你可以将与这些牌相同花色的手牌交给一名其他角色，然后获得这些牌并可以交换描述中一组①和②的位置。",
+	qunfang_meiyan: "媄嬿",
+	qunfang_meiyan_info:
+		"每回合限一次，当你获得牌后，若这些牌的花色数等于/大于/小于场上牌的花色数，你令一名角色交给你一或其装备区内的牌数张牌/将一张牌置于一名角色的装备区并替换原有装备/获得一名角色装备区的所有牌。",
 };

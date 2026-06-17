@@ -5,6 +5,7 @@ import { lib, game, get, ui, _status } from "noname";
 import { qunfangZhaoxiangSkills } from "./zhaoxiang.js";
 import { qunfangXiahoushiSkills } from "./xiahoushi.js";
 import { qunfangCaiwenjiSkills } from "./caiwenji.js";
+import { qunfangLibrarySkills } from "./jingyan_meiyan.js";
 
 const qunfangShoudaoPhases = [
 	["phaseJudge", "判定阶段"],
@@ -895,6 +896,57 @@ async function chooseQunfangDisableEquipSlot(player, prompt) {
 	if (!result?.bool || !result.links?.length) return null;
 	await player.disableEquip(result.links[0]);
 	return result.links[0];
+}
+
+function getQunfangLujuOwners(player) {
+	return game.filterPlayer((current) => current.hasSkill("qunfang_luju") && current.isIn());
+}
+
+function getQunfangLujuTargets(player) {
+	if (!getQunfangLujuOwners(player).length) return [];
+	return game.filterPlayer((target) => target.countCards("ej") > 0);
+}
+
+function getQunfangLujuFieldCards(target) {
+	return target?.getCards?.("ej") || [];
+}
+
+function isQunfangXuanshiEntryCard(card) {
+	if (!card) return false;
+	if (get.is.convertedCard(card) || get.is.virtualCard(card)) return true;
+	if (!card.isCard || !Array.isArray(card.cards) || !card.cards.length) return false;
+	if (get.is.ordinaryCard(card)) {
+		return card.cards[0]?.name !== card.name;
+	}
+	return true;
+}
+
+function getQunfangXuanshiDiscardedEquips(event) {
+	const cards = event?.getd?.() || [];
+	if (cards.length) {
+		return cards.filter((card) => get.type(card, null, false) === "equip");
+	}
+	if (event.name === "cardsDiscard") {
+		return event.cards?.filterInD?.("d")?.filter((card) => get.type(card, null, false) === "equip") || [];
+	}
+	if (event.name === "lose" && event.position === ui.discardPile) {
+		return event.cards?.filterInD?.("d")?.filter((card) => get.type(card, null, false) === "equip") || [];
+	}
+	return [];
+}
+
+function getQunfangDiscardPileSha() {
+	return Array.from(ui.discardPile.childNodes || []).filter((card) => get.name(card, false) === "sha");
+}
+
+async function qunfangEquipCardToTarget(target, card, source) {
+	if (!target?.isIn?.() || !card) return;
+	if (target.canEquip(card, true)) {
+		await target.equip(card);
+		if (source) game.log(source, "将", card, "置入了", target, "的武器栏");
+	} else if (get.position(card, true) !== "d") {
+		await game.cardsDiscard(card);
+	}
 }
 
 function getQunfangYuanlieSkills(player) {
@@ -2319,6 +2371,229 @@ export const skills = {
 			result: { player: 1 },
 		},
 	},
+	qunfang_qiaoren_skill: {
+		equipSkill: true,
+		locked: true,
+		trigger: { global: "useCardToTargeted" },
+		forced: true,
+		priority: -1,
+		logTarget: "target",
+		filter(event, player) {
+			const useEvt = event.getParent();
+			return event.player === player && !!event.card && !!event.target?.isIn?.() && useEvt?.targets?.length === 1 && useEvt.targets[0] === event.target && get.type(event.card, null, false) !== "equip";
+		},
+		async content(event, trigger, player) {
+			const target = trigger.target;
+			if (!target?.isIn?.()) return;
+			let cannotRespond = !target.countCards("he");
+			if (!cannotRespond) {
+				const result = await target
+					.chooseControl(["弃置一张牌", "不可响应此牌"])
+					.set("prompt", `俏刃：响应${get.translation(trigger.card)}前请选择一项`)
+					.set("ai", () => {
+						const { source, card } = get.event();
+						if (get.attitude(_status.event.player, source) < 0 && get.value(card, source, "raw") > 4) return "不可响应此牌";
+						return "弃置一张牌";
+					})
+					.set("source", player)
+					.set("card", trigger.card)
+					.forResult();
+				if (result.control === "弃置一张牌") {
+					const discard = await target.chooseToDiscard("he", true).forResult();
+					if (discard?.bool) return;
+				}
+				cannotRespond = true;
+			}
+			if (cannotRespond) {
+				const useEvt = trigger.getParent();
+				useEvt.customArgs ??= {};
+				useEvt.customArgs[target.playerid] ??= {};
+				useEvt.customArgs[target.playerid].directHit2 = true;
+				useEvt.directHit ??= [];
+				useEvt.directHit.add(target);
+				game.log(target, "不可响应", trigger.card);
+			}
+		},
+		ai: { directHit_ai: true },
+	},
+	qunfang_jianqiao: {
+		audio: 2,
+		locked: true,
+		trigger: { global: "phaseBegin" },
+		forced: true,
+		filter(event, player) {
+			return game.hasPlayer((target) => target.isIn());
+		},
+		async content(event, trigger, player) {
+			player.removeSkill("qunfang_jianqiao_sunben");
+			player.awakenSkill(event.name);
+			player.addSkill("qunfang_jianqiao_sunben");
+			player.clearMark("qunfang_jianqiao_sunben", false);
+			player.addMark("qunfang_jianqiao_sunben", 3, false);
+			const result = await player
+				.chooseTarget(`间俏：将一张【俏刃】置入一名角色的武器栏`, true, (card, player, target) => target.isIn())
+				.set("ai", (target) => get.attitude(get.player(), target) + (target.countCards("e", { subtype: "equip1" }) ? 0 : 1.5))
+				.forResult();
+			if (!result?.bool || !result.targets?.length) return;
+			const target = result.targets[0];
+			player.logSkill("qunfang_jianqiao", target);
+			const card = game.createCard2 ? game.createCard2("qunfang_qiaoren", "spade", 1) : game.createCard("qunfang_qiaoren", "spade", 1);
+			if (!card) return;
+			await qunfangEquipCardToTarget(target, card, player);
+		},
+		subSkill: {
+			sunben: {
+				charlotte: true,
+				mark: true,
+				intro: { content: "还需#次全场造成伤害" },
+				trigger: { global: "damageEnd" },
+				filter(event) {
+					return event.num > 0;
+				},
+				forced: true,
+				popup: false,
+				firstDo: true,
+				content(event, trigger, player) {
+					player.removeMark(event.name, trigger.num, false);
+					if (!player.countMark(event.name)) {
+						player.removeSkill(event.name);
+						if (player.hasSkill("qunfang_jianqiao", null, null, false) && !player.hasSkill("qunfang_jianqiao")) {
+							player.popup("间俏");
+							player.restoreSkill("qunfang_jianqiao");
+							game.log(player, "恢复了技能", "#g【间俏】");
+						}
+					}
+				},
+			},
+		},
+	},
+	qunfang_luju: {
+		audio: 2,
+		global: "qunfang_luju_global",
+	},
+	qunfang_luju_global: {
+		audio: "qunfang_luju",
+		sourceSkill: "qunfang_luju",
+		enable: "phaseUse",
+		usable: 1,
+		filter(event, player) {
+			return getQunfangLujuOwners(player).length > 0 && game.hasPlayer((target) => getQunfangLujuFieldCards(target).length > 0);
+		},
+		async content(event, trigger, player) {
+			const owners = getQunfangLujuOwners(player);
+			if (!owners.length) return;
+			let owner = owners[0];
+			if (owners.length > 1) {
+				const ownerResult = await player
+					.chooseTarget("戮局：选择一名拥有“戮局”的角色作为参照", true, (card, player, target) => getQunfangLujuOwners(player).includes(target))
+					.set("ai", (target) => -get.attitude(get.player(), target))
+					.forResult();
+				if (!ownerResult?.bool || !ownerResult.targets?.length) return;
+				owner = ownerResult.targets[0];
+			}
+			const fieldResult = await player
+				.chooseTarget("戮局：选择提供场上牌的角色", true, (card, player, target) => getQunfangLujuFieldCards(target).length > 0)
+				.set("ai", (target) => -get.attitude(get.player(), target))
+				.forResult();
+			if (!fieldResult?.bool || !fieldResult.targets?.length) return;
+			const fieldTarget = fieldResult.targets[0];
+			const cardResult = await player
+				.choosePlayerCard(fieldTarget, "ej", true, `戮局：选择${get.translation(fieldTarget)}场上的一张牌`)
+				.forResult();
+			const material = cardResult?.cards?.[0] || cardResult?.links?.[0];
+			if (!cardResult?.bool || !material) return;
+			let viewAs;
+			if (player.hp > owner.hp) {
+				viewAs = "juedou";
+			} else if (player.hp < owner.hp) {
+				viewAs = "jiedao";
+			} else {
+				const choice = await player
+					.chooseControl(["juedou", "jiedao"])
+					.set("choiceList", ["将此牌当【决斗】使用", "将此牌当【借刀杀人】使用"])
+					.set("prompt", "戮局：选择视为使用的牌")
+					.set("ai", () => "juedou")
+					.forResult();
+				if (!choice?.control) return;
+				viewAs = choice.control;
+			}
+			const vcard = get.autoViewAs({ name: viewAs }, [material]);
+			player.logSkill("qunfang_luju", owner);
+			await player.chooseUseTarget(vcard, [material], true, false);
+		},
+		ai: {
+			order: 6,
+			result: { player: 1 },
+		},
+	},
+	qunfang_xuanshi: {
+		audio: 2,
+		group: ["qunfang_xuanshi_add", "qunfang_xuanshi_sha"],
+		subSkill: {
+			add: {
+				trigger: { global: "useCardToPlayered" },
+				direct: true,
+				filter(event, player) {
+					if (player.hasSkill("qunfang_xuanshi_add_used")) return false;
+					if (!event.isFirstTarget || !event.card) return false;
+					if (!get.is.convertedCard(event.card) && !get.is.virtualCard(event.card)) return false;
+					const useEvt = event.getParent();
+					if (!useEvt?.targets?.length) return false;
+					return game.hasPlayer((target) => !useEvt.targets.includes(target) && lib.filter.targetEnabled2(useEvt.card, useEvt.player, target));
+				},
+				async content(event, trigger, player) {
+					const result = await player
+						.chooseTarget(get.prompt("qunfang_xuanshi"), "为此牌增加一个合法目标并回复1点体力", (card, player, target) => {
+							const useEvt = get.event().getTrigger().getParent();
+							return !useEvt.targets.includes(target) && lib.filter.targetEnabled2(useEvt.card, useEvt.player, target);
+						})
+						.set("ai", (target) => {
+							const useEvt = get.event().getTrigger().getParent();
+							return get.effect(target, useEvt.card, useEvt.player, get.player());
+						})
+						.forResult();
+					if (!result?.bool || !result.targets?.length) return;
+					const useEvt = trigger.getParent();
+					player.logSkill("qunfang_xuanshi", result.targets);
+					player.line(result.targets);
+					game.log(result.targets, "成为了", useEvt.card, "的额外目标");
+					useEvt.targets.addArray(result.targets);
+					player.addTempSkill("qunfang_xuanshi_add_used", "phaseAfter");
+					await player.recover();
+				},
+			},
+			sha: {
+				trigger: { global: ["loseAfter", "cardsDiscardAfter", "loseAsyncAfter"] },
+				direct: true,
+				filter(event, player) {
+					if (player.hasSkill("qunfang_xuanshi_sha_used")) return false;
+					if (!getQunfangXuanshiDiscardedEquips(event).length) return false;
+					return getQunfangDiscardPileSha().length > 0 && game.hasPlayer((target) => target.isIn());
+				},
+				async content(event, trigger, player) {
+					const shaList = getQunfangDiscardPileSha();
+					if (!shaList.length) return;
+					const cardResult = await player
+						.chooseButton(["旋势：选择弃牌堆中的一张【杀】", shaList])
+						.set("ai", (button) => get.value(button.link))
+						.forResult();
+					if (!cardResult?.bool || !cardResult.links?.length) return;
+					const targetResult = await player
+						.chooseTarget("旋势：令一名角色获得此【杀】并回复1点体力", true, (card, player, target) => target.isIn())
+						.set("ai", (target) => get.attitude(get.player(), target))
+						.forResult();
+					if (!targetResult?.bool || !targetResult.targets?.length) return;
+					const target = targetResult.targets[0];
+					player.logSkill("qunfang_xuanshi", target);
+					await target.gain(cardResult.links[0], "gain2");
+					player.addTempSkill("qunfang_xuanshi_sha_used", "phaseAfter");
+					await player.recover();
+				},
+			},
+			add_used: { charlotte: true },
+			sha_used: { charlotte: true },
+		},
+	},
 	qunfang_yuanlie: {
 		audio: 2,
 		locked: true,
@@ -2360,4 +2635,5 @@ export const skills = {
 	...qunfangZhaoxiangSkills,
 	...qunfangXiahoushiSkills,
 	...qunfangCaiwenjiSkills,
+	...qunfangLibrarySkills,
 };

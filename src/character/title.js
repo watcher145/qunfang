@@ -9,4 +9,6 @@ export const characterTitle = {
 	qunfang_liuling_liupei: "贵胄随贡",
 	qunfang_zhaoe: "烈女誓仇",
 	qunfang_xiahoulinnv: "浮萍守贞",
+	qunfang_dufuren: "三傍异容",
+	qunfang_diaochan: "葇刃间计",
 };

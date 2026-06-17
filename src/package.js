@@ -41,7 +41,7 @@ const characterSort = {
 	qunfang_dilian: ["qunfang_daqiao_xiaoqiao", "qunfang_wangtao_wangyue", "qunfang_liuling_liupei"],
 	qunfang_liehui: ["qunfang_lifuren", "qunfang_zhaoe", "qunfang_xiahoulinnv"],
 	//qunfang_dusi: [],
-	//qunfang_fangrou: [],
+	qunfang_fangrou: ["qunfang_dufuren", "qunfang_diaochan"],
 };
 
 /**
@@ -62,7 +62,7 @@ export function getPackage() {
 		card: {
 			card: cloneAndPatchCards(),
 			translate: { ...cardTranslate },
-			list: [],
+			list: [["spade", 1, "qunfang_qiaoren"]],
 		},
 		skill: {
 			skill: { ...skills },

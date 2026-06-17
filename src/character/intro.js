@@ -10,4 +10,6 @@ export const characterIntro = {
 	qunfang_lifuren: "设计：欢愉与希望",
 	qunfang_zhaoe: "设计：欢愉与希望",
 	qunfang_xiahoulinnv: "设计：欢愉与希望",
+	qunfang_dufuren: "设计：欢愉与希望",
+	qunfang_diaochan: "设计：欢愉与希望",
 };
