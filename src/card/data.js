@@ -12,9 +12,12 @@ export const cardData = {
 			return target === player;
 		},
 		selectTarget: 1,
-		content() {
+		async content(event, trigger, player) {
+			const target = event.target;
 			target.draw(2);
-			target.chooseToDiscard(2, "he", true).ai = get.disvalue;
+			await target.chooseToDiscard(2, "he", true)
+				.set("ai", get.disvalue)
+				.forResult();
 		},
 		ai: {
 			order: 7,
@@ -44,7 +47,7 @@ export const cardData = {
 		fullskin: true,
 		type: "equip",
 		subtype: "equip1",
-		distance: { attackFrom: -1 },
+//		distance: { attackFrom: -1 },
 		skills: ["qunfang_qiaoren_skill"],
 		ai: {
 			basic: {

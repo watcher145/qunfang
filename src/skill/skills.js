@@ -279,7 +279,7 @@ async function virtualYinjiCard(user, other, cardName) {
 		await user.useCard(vcard, user, false, "qunfang_yinji");
 		return true;
 	}
-	if (!other?.isIn?.() || !user.canUse(vcard, other, false)) {
+	if (!user.hasUseTarget(vcard, false)) {
 		return false;
 	}
 	const useBefore = user.getHistory(
@@ -287,8 +287,7 @@ async function virtualYinjiCard(user, other, cardName) {
 		(evt) => evt.skill === "qunfang_yinji" && evt.card && get.name(evt.card, user) === cardName,
 	).length;
 	await user
-		.chooseUseTarget(vcard, other, true, false, `姻计：视为使用一张【${get.translation(cardName)}】`)
-		.set("filterTarget", (c, p, t) => t === other && lib.filter.targetEnabled(c, p, t))
+		.chooseUseTarget(vcard, true, false, `姻计：视为使用一张【${get.translation(cardName)}】`)
 		.set("logSkill", "qunfang_yinji");
 	const useAfter = user.getHistory(
 		"useCard",
@@ -768,10 +767,14 @@ function addQunfangFushengCountedIds(player, cards) {
 }
 
 function countQunfangFushengSkills(player) {
-	return player.getSkills(null, false, false).filter((skill) => {
+	const all = player.getSkills(null, false, false);
+	const result = all.filter((skill) => {
 		const info = get.info(skill);
-		return !!info && !info.charlotte;
-	}).length;
+		if (!info || info.charlotte) return false;
+		if (info.sub || info.equipSkill || info.cardSkill || info.ruleSkill) return false;
+		return get.skillCategoriesOf(skill, player).length === 0;
+	});
+	return result.length;
 }
 
 function addQunfangFushengDiscardCount(player, num) {
@@ -987,7 +990,13 @@ export const skills = {
 						.chooseBool(get.prompt("qunfang_yinji", trigger.player), `与其依次视为使用一张【${get.translation(getYinjiCard(player))}】`)
 						.set("ai", () => {
 							const { player, recoverer } = get.event();
-							return get.recoverEffect(recoverer, player, player) > 0 ? 0.5 : 0;
+							const base = Math.max(0, get.recoverEffect(recoverer, player, player));
+							const att = get.attitude(player, recoverer);
+							if (att > 0) {
+								if (recoverer.countCards("he") >= 2) return base + 0.5;
+								return base + 0.2;
+							}
+							return base + 0.8;
 						})
 						.set("recoverer", trigger.player)
 						.forResult();
@@ -1754,7 +1763,18 @@ export const skills = {
 		},
 		async content(event, trigger, player) {
 			const name = get.name(trigger.card, false);
-			const result = await player.chooseBool(get.prompt("qunfang_tongzheng", trigger.player), `是否使用一张${get.translation(name)}？`).set("ai", () => true).forResult();
+			const result = await player.chooseBool(get.prompt("qunfang_tongzheng", trigger.player), `是否使用一张${get.translation(name)}？`)
+				.set("ai", () => {
+					const { player, cardName } = get.event();
+					const cards = player.getCards("hs", card => {
+						const cn = get.name(card, player);
+						return cn === cardName || cn === "unsure";
+					});
+					const value = cards.length ? Math.min(...cards.map(card => get.value(card, player))) : 9;
+					return value > 5 ? 0.3 : 1;
+				})
+				.set("cardName", name)
+				.forResult();
 			if (!result.bool) return;
 			player.logSkill("qunfang_tongzheng", trigger.player);
 			await player
@@ -2227,7 +2247,7 @@ export const skills = {
 				return (
 					"转换技，每当你有X张牌失去并进入弃牌堆，或当你进入濒死状态时，" +
 					(!storage
-						? "你可以摸等同于技能数的牌。"
+						? "你可以摸等同于无标签技能数的牌。"
 						: "你可以废除一个装备栏，视为使用一张普通锦囊牌或基本牌，然后加1点体力上限。") +
 					`（X为你的体力上限；当前已累计${getQunfangFushengDiscardCount(player)}张）`
 				);
@@ -2284,10 +2304,17 @@ export const skills = {
 					player.markSkill("qunfang_fusheng");
 					if (getQunfangFushengDiscardCount(player) < player.maxHp) return;
 					if (player.storage.qunfang_fusheng && !canQunfangFushengUseSecondMode(player)) return;
-					const result = await player
-						.chooseBool(get.prompt("qunfang_fusheng"), getQunfangFushengPrompt(player))
-						.set("ai", () => true)
-						.forResult();
+				const result = await player
+					.chooseBool(get.prompt("qunfang_fusheng"), getQunfangFushengPrompt(player))
+					.set("ai", () => {
+						const player = get.player();
+						const secondMode = !!player.storage.qunfang_fusheng;
+						if (!secondMode) return 1;
+						const slots = getQunfangEnabledEquipSlots(player);
+						if (slots.length <= 2) return 0.3;
+						return 0.8;
+					})
+					.forResult();
 					if (!result?.bool) return;
 					consumeQunfangFushengDiscardCount(player);
 					await resolveQunfangFusheng(player);

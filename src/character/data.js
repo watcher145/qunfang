@@ -12,8 +12,8 @@ export const characterData = {
 	},
 	qunfang_zhaoxiang: {
 		sex: "female",
-		group: "shu",
-		doubleGroup: ["shu", "qun"],
+		group: "qun",
+		doubleGroup: ["qun", "shu"],
 		hp: 2,
 		maxHp: 3,
 		skills: ["qunfang_lihu", "qunfang_dunfu"],

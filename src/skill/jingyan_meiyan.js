@@ -407,7 +407,16 @@ export const qunfangLibrarySkills = {
 			);
 			const ok = await player
 				.chooseBool(get.prompt("qunfang_jingyan"), "是否发动【惊颜】？")
-				.set("ai", () => true)
+				.set("ai", () => {
+					const suits = trigger._qunfang_jingyan_suits;
+					if (!suits?.length) return 0;
+					const giveable = player.getCards("h", card => suits.includes(get.suit(card, player)));
+					if (!giveable.length) return 0;
+					const minValue = Math.min(...giveable.map(card => get.value(card, player)));
+					if (minValue <= 4) return 1;
+					const hasAlly = game.hasPlayer(t => t !== player && t.isIn() && get.attitude(player, t) > 0);
+					return hasAlly ? 0.5 : 0.2;
+				})
 				.forResult();
 			if (!ok?.bool) return;
 			player.storage.qunfang_jingyan_mode_count = !player.storage.qunfang_jingyan_mode_count;
